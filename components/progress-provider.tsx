@@ -134,7 +134,19 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
   const resetProgress = useCallback(() => {
     dispatch({ type: "reset" })
     setCelebration(null)
-    activeIndexRef.current = 0
+    /*
+     * Deliberately NOT touching activeIndexRef here. Presetting it to 0 before
+     * the animated scroll-back plays out used to backfire: scrollIntoView's
+     * smooth scroll visibly passes through every reel between wherever the
+     * learner was and reel 0, and with the ref already saying "0", each of
+     * those intermediate reels (index > 0) read as a forward skip against a
+     * just-emptied `attempted` list — reset was tripping its own false skip
+     * streak. Left alone, the ref updates naturally as each reel's own
+     * IntersectionObserver fires during the transit, so every step is
+     * correctly seen as backward (index < prev) and only ever resets the
+     * streak, regardless of how many intermediate reels the browser actually
+     * samples along the way.
+     */
     scrollToReel(0)
   }, [scrollToReel])
 

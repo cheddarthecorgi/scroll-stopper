@@ -58,6 +58,18 @@ export function reducer(state: State, action: Action): State {
       const next = { ...state, activeIndex: index }
 
       /*
+       * Only forward (downward) movement can accumulate skips. Moving back
+       * up — including via "Take me there" on a locked reel, or "Finish
+       * module N" on the summary card — is the learner deliberately
+       * returning to fix their position, not doomscrolling, so it always
+       * resets any in-progress streak instead of ever tripping the
+       * guardrail.
+       */
+      if (index <= prev) {
+        return next.skipCount === 0 ? next : { ...next, skipCount: 0 }
+      }
+
+      /*
        * Count every reel left behind by this jump, not just `prev`. CSS
        * scroll-snap can carry the viewport straight from reel 0 to reel 3 in
        * one continuous motion without the browser ever sampling reels 1-2 at
@@ -76,11 +88,8 @@ export function reducer(state: State, action: Action): State {
        * whole app is built on "run the code," so skip-counting holds to the
        * same bar.
        */
-      const from = Math.min(prev, index)
-      const to = Math.max(prev, index)
       let skipped = 0
-      for (let i = from; i <= to; i++) {
-        if (i === index) continue // just arrived here — hasn't been "left" yet
+      for (let i = prev; i < index; i++) {
         if (!state.attempted.includes(i)) skipped++
       }
 

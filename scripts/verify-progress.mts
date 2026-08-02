@@ -20,6 +20,12 @@
  *    never fired in practice. Dwelling on a reel is not the same as running
  *    its code, and the app's whole premise is "run the code" — so only
  *    `attempted` breaks a skip streak now, not merely having looked at it.
+ *
+ * 3. Counting backward moves as skips too meant "Take me there" (jump back to
+ *    the unlocked reel from a locked one further ahead) and "Finish module N"
+ *    on the summary card — both intentional, corrective navigation — could
+ *    themselves trip the guardrail. Only forward (downward) movement
+ *    accumulates skips now; moving back always resets the streak instead.
  */
 import { INITIAL, reducer, SKIPS_BEFORE_PAUSE, type State } from "../lib/progress-reducer.ts"
 
@@ -96,15 +102,27 @@ console.log("\n=== Mindful Pause guardrail ===\n")
   console.log("")
 }
 
-// --- Backward jumps count too (matches the original design intent) ---
+// --- Bug #3: backward navigation must never trigger the guardrail ---
 {
-  console.log("[6] A fast backward jump also triggers the guardrail")
+  console.log("[6] A fast backward jump never triggers the guardrail (e.g. 'Take me there')")
   // Constructed directly rather than reached via the reducer: state.activeIndex
   // must actually be 3 already, or the reducer's no-op guard (activeIndex ===
   // index) would swallow this as a non-move before the skip math ever runs.
   const startedAtReelThree: State = { ...INITIAL, activeIndex: 3 }
   const after = visit(startedAtReelThree, 0, 3) // was on reel 3, jumps straight back to 0
-  check("pause opens on a 3-reel backward jump", after.pauseOpen === true)
+  check("no pause on a 3-reel backward jump", after.pauseOpen === false)
+  check("skipCount stays at 0", after.skipCount === 0)
+}
+
+// --- A backward jump also clears whatever forward skip streak was building ---
+{
+  console.log("[6b] Jumping back mid-streak resets the accumulated skip count")
+  let s = INITIAL
+  s = visit(s, 1, 0)
+  s = visit(s, 2, 1)
+  check("2 skips accumulated forward", s.skipCount === 2 && !s.pauseOpen)
+  s = visit(s, 0, 2) // jump back to the start
+  check("backward jump resets the streak", s.skipCount === 0 && !s.pauseOpen)
   console.log("")
 }
 

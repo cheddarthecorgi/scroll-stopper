@@ -66,14 +66,12 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
   const [celebration, setCelebration] = useState<Celebration | null>(null)
 
   // Refs are only ever read/written from event handlers and effects, never during render.
-  const enteredAt = useRef(0)
   const activeIndexRef = useRef(0)
   const autoScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Load persisted progress once, on the client only.
   useEffect(() => {
     const saved = readJSON<Partial<Persisted>>(STORAGE_KEYS.progress, EMPTY_PERSISTED)
-    enteredAt.current = Date.now()
     dispatch({ type: "hydrate", saved })
   }, [])
 
@@ -111,10 +109,7 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
     if (prev === index) return
 
     activeIndexRef.current = index
-    const dwell = Date.now() - enteredAt.current
-    enteredAt.current = Date.now()
-
-    dispatch({ type: "visit", index, prev, dwell })
+    dispatch({ type: "visit", index, prev })
   }, [])
 
   const markAttempted = useCallback((index: number) => {
@@ -140,7 +135,6 @@ export function ProgressProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: "reset" })
     setCelebration(null)
     activeIndexRef.current = 0
-    enteredAt.current = Date.now()
     scrollToReel(0)
   }, [scrollToReel])
 

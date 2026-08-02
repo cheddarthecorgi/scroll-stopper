@@ -1,16 +1,25 @@
 /**
  * Regression suite for the Mindful Pause skip-counting logic.
  *
- * Guards against a real bug: the guardrail only counted a skip when a reel's
- * own IntersectionObserver fired, but CSS scroll-snap can carry the viewport
- * straight past several reels in one continuous motion without ever sampling
- * the ones in between at the 0.6 visibility threshold. A fast 3-reel skip
- * therefore registered as one skip, not three, and only finished
- * accumulating once the learner scrolled again (including backward) —
- * exactly the "have to scroll back up for it to pop up" symptom that was
- * reported. The fix derives skip weight from index arithmetic against
- * `attempted`, so it no longer depends on catching every intermediate
- * observer firing.
+ * Guards against two real bugs found in testing, both in how a skip "run" is
+ * tallied across a fast, multi-reel scroll:
+ *
+ * 1. The guardrail originally counted a skip only when a reel's own
+ *    IntersectionObserver fired, but CSS scroll-snap can carry the viewport
+ *    straight past several reels in one continuous motion without ever
+ *    sampling the ones in between at the 0.6 visibility threshold. A fast
+ *    3-reel skip registered as one skip, not three, and only finished
+ *    accumulating once the learner scrolled again (including backward) —
+ *    the "have to scroll back up for it to pop up" symptom.
+ *
+ * 2. The fix for #1 derived skip weight from index arithmetic, but initially
+ *    still exempted the reel being left (`prev`) if the learner had dwelled
+ *    on it 6+ seconds — which is true in almost every real session (you
+ *    always spend a few seconds on the current reel before flicking past the
+ *    next few). That silently dropped a real 3-reel skip to 2, so it still
+ *    never fired in practice. Dwelling on a reel is not the same as running
+ *    its code, and the app's whole premise is "run the code" — so only
+ *    `attempted` breaks a skip streak now, not merely having looked at it.
  */
 import { INITIAL, reducer, SKIPS_BEFORE_PAUSE, type State } from "../lib/progress-reducer.ts"
 
@@ -20,13 +29,13 @@ function check(label: string, ok: boolean, detail = "") {
   console.log(`${ok ? "  ok  " : " FAIL "} ${label}${detail ? ` — ${detail}` : ""}`)
 }
 
-function visit(state: State, index: number, prev: number, dwell = 0): State {
-  return reducer(state, { type: "visit", index, prev, dwell })
+function visit(state: State, index: number, prev: number): State {
+  return reducer(state, { type: "visit", index, prev })
 }
 
 console.log("\n=== Mindful Pause guardrail ===\n")
 
-// --- The reported bug: one fast jump across 3 unattempted reels ---
+// --- Bug #1: one fast jump across 3 unattempted reels, no intermediate events ---
 {
   console.log("[1] One continuous jump 0 -> 3 (no intermediate observer firings)")
   const after = visit(INITIAL, 3, 0)
@@ -60,11 +69,18 @@ console.log("\n=== Mindful Pause guardrail ===\n")
   console.log("")
 }
 
-// --- Dwelling long enough on the reel just left should exclude it ---
+// --- Bug #2: merely dwelling on the origin reel must NOT exempt it ---
 {
-  console.log("[4] Long dwell on the reel just left doesn't count as a skip")
-  const after = visit(INITIAL, 1, 0, 6000) // dwelled 6s on reel 0 before leaving
-  check("engaged via dwell — no skip counted", after.skipCount === 0)
+  console.log("[4] Time spent on the origin reel does not exempt it from the skip count")
+  // Simulates the real-world failure: the learner sat on reel 0 reading it for
+  // a while (mirrored here by simply not attempting it — the reducer has no
+  // concept of elapsed time at all anymore), then flicked past reels 1 and 2
+  // straight to reel 3 in one motion.
+  const after = visit(INITIAL, 3, 0)
+  check(
+    "all 3 passed-over reels count, none exempted just for being visited a while",
+    after.skipCount === 0 && after.pauseOpen === true,
+  )
   console.log("")
 }
 

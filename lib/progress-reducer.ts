@@ -1,7 +1,5 @@
 import { feedData } from "./feed-data.ts"
 
-/** A reel is "skipped" when the learner leaves it faster than this without running code. */
-export const SKIP_DWELL_MS = 6000
 /** Consecutive skips that trigger the Mindful Pause guardrail. */
 export const SKIPS_BEFORE_PAUSE = 3
 
@@ -39,7 +37,7 @@ export const INITIAL: State = {
 
 export type Action =
   | { type: "hydrate"; saved: Partial<Persisted> }
-  | { type: "visit"; index: number; prev: number; dwell: number }
+  | { type: "visit"; index: number; prev: number }
   | { type: "attempt"; index: number }
   | { type: "pass"; index: number; xp: number }
   | { type: "dismissPause" }
@@ -55,7 +53,7 @@ export function reducer(state: State, action: Action): State {
       return { ...state, ...EMPTY_PERSISTED, ...action.saved, hydrated: true }
 
     case "visit": {
-      const { index, prev, dwell } = action
+      const { index, prev } = action
       if (state.activeIndex === index) return state
       const next = { ...state, activeIndex: index }
 
@@ -67,17 +65,23 @@ export function reducer(state: State, action: Action): State {
        * aren't reliable for catching everything passed through. Deriving the
        * skip weight from index arithmetic instead means a single big jump is
        * caught immediately, with no dependency on intermediate observers
-       * having fired. (This is what caused the guardrail to only trigger
-       * after scrolling back up: each *individual* hop only ever contributed
-       * 1, so a 3-reel jump undercounted until enough small hops piled on.)
+       * having fired.
+       *
+       * Only `attempted` (the learner actually ran that reel's code) breaks
+       * the streak — merely dwelling on a reel used to grant it a pass, but
+       * that quietly undercounted the very first reel of almost every real
+       * skip run (you always spend a few seconds on the reel you're on
+       * before flicking past the next few), so a genuine 3-reel skip only
+       * ever tallied 2 and never fired. Watching isn't engagement here; the
+       * whole app is built on "run the code," so skip-counting holds to the
+       * same bar.
        */
       const from = Math.min(prev, index)
       const to = Math.max(prev, index)
       let skipped = 0
       for (let i = from; i <= to; i++) {
         if (i === index) continue // just arrived here — hasn't been "left" yet
-        const dwelledOnIt = i === prev && dwell >= SKIP_DWELL_MS
-        if (!state.attempted.includes(i) && !dwelledOnIt) skipped++
+        if (!state.attempted.includes(i)) skipped++
       }
 
       if (skipped === 0) {

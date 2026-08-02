@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "verify": "node --no-warnings scripts/verify-challenges.mts",
+    "verify:challenges": "node --no-warnings scripts/verify-challenges.mts",
+    "verify:progress": "node --no-warnings scripts/verify-progress.mts",
+    "verify": "npm run verify:challenges && npm run verify:progress",
     "check": "npm run typecheck && npm run lint && npm run verify"
   },
   "dependencies": {

@@ -11,12 +11,9 @@ import {
   useState,
 } from "react"
 import { FULL_XP, feedData } from "@/lib/feed-data"
+import { EMPTY_PERSISTED, INITIAL, reducer, type Persisted } from "@/lib/progress-reducer"
 import { STORAGE_KEYS, readJSON, writeJSON } from "@/lib/storage"
 
-/** A reel is "skipped" when the learner leaves it faster than this without running code. */
-const SKIP_DWELL_MS = 6000
-/** Consecutive skips that trigger the Mindful Pause guardrail. */
-const SKIPS_BEFORE_PAUSE = 3
 /** Delay between clearing a challenge and auto-advancing to the next reel. */
 export const AUTO_SCROLL_DELAY_MS = 1500
 /** id of the snap-scroll container, so the guardrail can freeze it. */
@@ -24,114 +21,6 @@ export const FEED_SCROLL_ID = "reel-feed-scroll"
 
 const XP_PER_LEVEL = 300
 const BASE_SAFETY_INDEX = 98
-
-/** The slice written to localStorage. Transient UI state is deliberately excluded. */
-type Persisted = {
-  /** Reel index → XP awarded (full or partial). */
-  awarded: Record<string, number>
-  /** Reel indices where the learner has run code at least once. */
-  attempted: number[]
-  unlockedIndex: number
-  mindfulPauses: number
-}
-
-type State = Persisted & {
-  activeIndex: number
-  skipCount: number
-  pauseOpen: boolean
-  hydrated: boolean
-}
-
-const EMPTY_PERSISTED: Persisted = {
-  awarded: {},
-  attempted: [],
-  unlockedIndex: 0,
-  mindfulPauses: 0,
-}
-
-const INITIAL: State = {
-  ...EMPTY_PERSISTED,
-  activeIndex: 0,
-  skipCount: 0,
-  pauseOpen: false,
-  hydrated: false,
-}
-
-type Action =
-  | { type: "hydrate"; saved: Partial<Persisted> }
-  | { type: "visit"; index: number; prev: number; dwell: number }
-  | { type: "attempt"; index: number }
-  | { type: "pass"; index: number; xp: number }
-  | { type: "dismissPause" }
-  | { type: "reset" }
-
-/**
- * Pure reducer — every transition, including opening the guardrail, is derived
- * from state so nothing has to fire as a side effect during render.
- */
-function reducer(state: State, action: Action): State {
-  switch (action.type) {
-    case "hydrate":
-      return { ...state, ...EMPTY_PERSISTED, ...action.saved, hydrated: true }
-
-    case "visit": {
-      if (state.activeIndex === action.index) return state
-      const next = { ...state, activeIndex: action.index }
-
-      // Reading the previous reel, or having tried its challenge, breaks the skip run.
-      const engaged =
-        state.attempted.includes(action.prev) || action.dwell >= SKIP_DWELL_MS
-      if (engaged) return next.skipCount === 0 ? next : { ...next, skipCount: 0 }
-
-      const skipCount = state.skipCount + 1
-      if (skipCount >= SKIPS_BEFORE_PAUSE) {
-        return {
-          ...next,
-          skipCount: 0,
-          mindfulPauses: state.mindfulPauses + 1,
-          pauseOpen: true,
-        }
-      }
-      return { ...next, skipCount }
-    }
-
-    case "attempt":
-      return {
-        ...state,
-        skipCount: 0,
-        attempted: state.attempted.includes(action.index)
-          ? state.attempted
-          : [...state.attempted, action.index],
-      }
-
-    case "pass": {
-      const key = String(action.index)
-      const previous = state.awarded[key] ?? 0
-      return {
-        ...state,
-        // Never downgrade an award — re-running a solved reel can't cost XP.
-        awarded: { ...state.awarded, [key]: Math.max(previous, action.xp) },
-        attempted: state.attempted.includes(action.index)
-          ? state.attempted
-          : [...state.attempted, action.index],
-        unlockedIndex: Math.max(
-          state.unlockedIndex,
-          Math.min(action.index + 1, feedData.length - 1),
-        ),
-        skipCount: 0,
-      }
-    }
-
-    case "dismissPause":
-      return state.pauseOpen ? { ...state, pauseOpen: false } : state
-
-    case "reset":
-      return { ...INITIAL, hydrated: true }
-
-    default:
-      return state
-  }
-}
 
 export type Celebration = { index: number; xp: number; partial: boolean; nonce: number }
 
